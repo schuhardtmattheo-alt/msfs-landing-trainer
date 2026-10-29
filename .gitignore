@@ -4,3 +4,4 @@ stage/
 src/data/
 __pycache__/
 *.pyc
+MSFS-LandingTrainer-*/
