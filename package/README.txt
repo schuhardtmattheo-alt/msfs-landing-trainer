@@ -27,8 +27,8 @@ external app) and start LandingTrainer\LandingTrainer.exe.
 How to use
 ----------
 1. Start MSFS 2020 and begin a flight at ANY airport (e.g. on a runway),
-   engines running. Best aircraft: FlyByWire A32NX or the default A320neo
-   (other aircraft work with the "Generic" profile).
+   engines running. Supported: Fenix A319/A320/A321, FlyByWire A32NX,
+   LVFR A319/A321 and the default A320neo (others: "generic" profile).
 2. Start LandingTrainer.exe (MSFS can stay in the foreground / full screen
    is fine; alt-tab to the tool).
 3. Enter airport (e.g. EDDF), choose runway (e.g. 25C), distance, configuration.
@@ -42,14 +42,17 @@ Configuration      Clean / Flaps 1 / Flaps 2 + gear / Flaps 3 + gear / Landing
 Speed              target speed (filled automatically per configuration)
 Approach           straight-in, or a 30 deg intercept from left/right
                    (practise LOC capture)
-Aircraft profile   Auto-detect (A32NX is recognised by the aircraft title),
-                   FlyByWire A32NX (uses A32NX FCU events), Generic
+Aircraft profile   Auto-detect (recognised by the aircraft title),
+                   Fenix (FCU + MCDU RAD NAV via cockpit controls),
+                   FlyByWire A32NX / LVFR (FCU events), default A320neo/generic
 ILS freq override  only needed if the ILS is not found automatically
 Below glideslope   start ~150 ft below the G/S so it is captured from below
 Engage autopilot   untick to hand-fly the whole approach
 
 Notes / limits
 --------------
+* Fenix: the ILS is typed into MCDU 1 RAD NAV automatically. Keep the MCDU
+  scratchpad empty before spawning. Needs a current MSFS 2020 (Sim Update 12+).
 * A32NX: if the FMA shows LVR CLB, move the thrust levers to the CLB detent.
   Press LS on the EFIS to see the ILS scales. The MCDU flight plan itself is
   NOT entered (the A32NX MCDU cannot be programmed from outside the sim);
@@ -63,6 +66,8 @@ Notes / limits
 
 Changelog
 ---------
+1.3  Fenix A319/A320/A321 support (ILS via MCDU, FCU, APPR check), LVFR,
+     better ILS detection.
 1.2  Auto-update: the app checks GitHub Releases on start and updates itself.
 1.1  More reliable APPR arming, previous approach cleared before re-spawn,
      folder build.

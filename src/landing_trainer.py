@@ -28,7 +28,19 @@ CONFIGS = {
     "Landing (flaps FULL, gear down)": (4, True, 140),
 }
 INTERCEPTS = {"Straight-in on centerline": 0, "30° intercept from the left": -30, "30° intercept from the right": 30}
-PROFILES = ["Auto-detect", "FlyByWire A32NX", "Generic / default aircraft"]
+FENIX = "Fenix A319 / A320 / A321"
+FBW = "FlyByWire A32NX / LVFR A319 / A321"
+GENERIC = "Default A320neo / generic aircraft"
+PROFILES = ["Auto-detect", FENIX, FBW, GENERIC]
+
+
+def detect_profile(title):
+    t = (title or "").upper()
+    if "FENIX" in t or "FNX" in t:
+        return FENIX
+    if any(k in t for k in ("A32NX", "FLYBYWIRE", "FBW", "LVFR")):
+        return FBW
+    return GENERIC
 
 
 class Trainer:
@@ -58,11 +70,11 @@ class Trainer:
         sc = self.connect()
 
         title = sc.get_title()
-        profile = cfg["profile"]
-        if profile == "Auto-detect":
-            fbw = any(k in title.upper() for k in ("A32NX", "FLYBYWIRE", "FBW"))
-            profile = "FlyByWire A32NX" if fbw else "Generic / default aircraft"
+        profile = cfg["profile"] if cfg["profile"] in PROFILES[1:] else detect_profile(title)
         self.log(f"Aircraft: {title or '?'}  ->  profile: {profile}")
+        if profile == FENIX and self._lvar(sc, "I_FCU_AP1") is None:
+            raise SimConnectError("Cannot access the Fenix cockpit controls (L-vars). Update MSFS 2020 to the latest "
+                                  "Sim Update and make sure the Fenix is fully loaded (cockpit powered).")
         if not sc.get_var("GENERAL ENG COMBUSTION:1", "bool"):
             self.log("WARNING: engine 1 is not running. Start the engines before spawning (or the aircraft will glide).")
 
@@ -73,7 +85,7 @@ class Trainer:
 
         self.disarm_previous_approach(sc, profile)
         sc.event("PAUSE_ON")
-        elev =rwy["elev_ft"] if rwy["elev_ft"] is not None else 0.0
+        elev = rwy["elev_ft"] if rwy["elev_ft"] is not None else 0.0
 
         # 1st teleport: get near the airport so the sim loads the local navaids (ILS).
         lat, lon, alt, hdg = rw.spawn_point(rwy, dist, intercept, 3.0, below, elev)
@@ -81,12 +93,19 @@ class Trainer:
         time.sleep(1.5)
 
         ils = None
-        for attempt in range(5):
+        navs = []
+        for attempt in range(6):
             navs = sc.nearby_navaids()
             ils = rw.pick_ils(rwy, navs)
             if ils:
                 break
             time.sleep(1.0)
+        if not ils:
+            locs = [n for n in navs if n["flags"] & 2]
+            self.log(f"  (sim returned {len(navs)} navaids, {len(locs)} localizers nearby)")
+            ils = rw.pick_ils(rwy, navs, relaxed=True)
+            if ils:
+                self.log("  using the best localizer match with relaxed criteria.")
 
         gs_angle = 3.0
         freq_hz = None
@@ -123,67 +142,174 @@ class Trainer:
         hdg_bug = round((hdg - magvar) % 360) or 360
         alt_target = int(round(alt / 100.0) * 100)
 
-        # Aircraft configuration
-        if sc.get_var("BRAKE PARKING POSITION", "bool"):
-            sc.event("PARKING_BRAKES")
-        sc.event("GEAR_DOWN" if gear_down else "GEAR_UP")
-        sc.event("FLAPS_SET", int(flap_idx * 16383 / 4))
-        sc.event("SPOILERS_ARM_ON" if gear_down else "SPOILERS_ARM_OFF")
-        sc.event("LANDING_LIGHTS_ON")
+        self.log(f"Final course {course_mag:03d}°M, heading {hdg_bug:03d}°M, ALT {alt_target} ft, SPD {speed:.0f} kt")
 
-        # Radios: NAV1 (default aircraft) and NAV3 (A32NX MMR) on the ILS
-        if freq_hz:
-            if sc.get_var("GPS DRIVES NAV1", "bool"):
-                sc.event("TOGGLE_GPS_DRIVES_NAV1")
-            sc.event("NAV1_RADIO_SET_HZ", freq_hz)
-            sc.event("NAV3_RADIO_SET_HZ", freq_hz)
-            sc.event("VOR1_SET", course_mag)
-            sc.event("VOR3_SET", course_mag)
-        self.log(f"Final course {course_mag:03d}°M, heading bug {hdg_bug:03d}°M, ALT {alt_target} ft, SPD {speed:.0f} kt")
+        if profile == FENIX:
+            # The Fenix runs its systems outside the sim: everything goes through its cockpit L-vars.
+            sc.event("PAUSE_OFF")
+            time.sleep(1.0)
+            self._fnx_configure(sc, flap_idx, gear_down)
+            if freq_hz:
+                self._fnx_tune_ils(sc, freq_hz, course_mag)
+            if cfg["autopilot"]:
+                self._fnx_autopilot(sc, bool(freq_hz))
+        else:
+            # Aircraft configuration
+            if sc.get_var("BRAKE PARKING POSITION", "bool"):
+                sc.event("PARKING_BRAKES")
+            sc.event("GEAR_DOWN" if gear_down else "GEAR_UP")
+            sc.event("FLAPS_SET", int(flap_idx * 16383 / 4))
+            sc.event("SPOILERS_ARM_ON" if gear_down else "SPOILERS_ARM_OFF")
+            sc.event("LANDING_LIGHTS_ON")
 
-        sc.event("PAUSE_OFF")
-        time.sleep(0.8)
+            # Radios: NAV1 (default aircraft) and NAV3 (A32NX / A320neo MMR) on the ILS
+            if freq_hz:
+                if sc.get_var("GPS DRIVES NAV1", "bool"):
+                    sc.event("TOGGLE_GPS_DRIVES_NAV1")
+                for idx in (1, 3):
+                    sc.event(f"NAV{idx}_RADIO_SET_HZ", freq_hz)
+                    sc.event(f"VOR{idx}_SET", course_mag)
 
-        if cfg["autopilot"]:
-            if profile == "FlyByWire A32NX":
-                self._fbw_autopilot(sc, speed, hdg_bug, alt_target, freq_hz)
-            else:
-                self._generic_autopilot(sc, speed, hdg_bug, alt_target, freq_hz)
+            sc.event("PAUSE_OFF")
+            time.sleep(0.8)
+
+            if cfg["autopilot"]:
+                if profile == FBW:
+                    self._fbw_autopilot(sc, speed, hdg_bug, alt_target, freq_hz)
+                else:
+                    self._generic_autopilot(sc, speed, hdg_bug, alt_target, freq_hz)
         self.log("Ready - you are on the approach. Disconnect the autopilot whenever you want and land!")
-        if profile == "FlyByWire A32NX":
-            self.log("A32NX: put thrust levers in CLB if A/THR shows LVR CLB; press LS on the EFIS for ILS scales.")
+        if profile in (FBW, FENIX):
+            self.log("Airbus: if the FMA shows LVR CLB, move the thrust levers to the CLB detent.")
         else:
             self.log("Tip: if the autothrottle does not hold speed, move your throttle to the CLB detent / set thrust.")
         return rwy
 
     # ------------------------------------------------------------ ILS helpers
-    def _wait_for_localizer(self, sc, idx, freq_hz, timeout=12.0):
+    def _wait_for_localizer(self, sc, receivers, freq_hz, timeout=12.0):
         """After a teleport the NAV receiver needs a moment; pressing APPR before the
         localizer is received is silently ignored by most aircraft."""
         t0 = time.time()
-        retuned = False
+        retuned = set()
         while time.time() - t0 < timeout:
-            cur = sc.get_var(f"NAV ACTIVE FREQUENCY:{idx}", "Hz", timeout=1.5)
-            if cur is not None and abs(cur - freq_hz) > 2000 and not retuned:
-                self.log(f"NAV{idx} was re-tuned to {cur / 1e6:.2f} MHz by the aircraft - setting the ILS again.")
-                sc.event(f"NAV{idx}_RADIO_SET_HZ", freq_hz)
-                retuned = True
-            if sc.get_var(f"NAV HAS LOCALIZER:{idx}", "bool", timeout=1.5):
-                self.log(f"Localizer signal received on NAV{idx} after {time.time() - t0:.1f} s.")
-                return True
+            for idx in receivers:
+                cur = sc.get_var(f"NAV ACTIVE FREQUENCY:{idx}", "Hz", timeout=1.5)
+                if cur is not None and abs(cur - freq_hz) > 2000 and idx not in retuned:
+                    self.log(f"NAV{idx} was re-tuned to {cur / 1e6:.2f} MHz by the aircraft - setting the ILS again.")
+                    sc.event(f"NAV{idx}_RADIO_SET_HZ", freq_hz)
+                    retuned.add(idx)
+                if sc.get_var(f"NAV HAS LOCALIZER:{idx}", "bool", timeout=1.5):
+                    self.log(f"Localizer signal received on NAV{idx} after {time.time() - t0:.1f} s.")
+                    return True
             time.sleep(0.5)
-        self.log(f"WARNING: no localizer signal on NAV{idx} after {timeout:.0f} s - trying APPR anyway.")
+        self.log(f"WARNING: no localizer signal after {timeout:.0f} s - trying APPR anyway.")
         return False
 
+    def _on(self, sc, name):
+        v = self._lvar(sc, name)
+        return v is not None and v > 0.5
+
+    # ------------------------------------------------------------------ Fenix
+    # Cockpit L-vars from the Fenix's own FNX32X_Interior.xml / Interactions.xml:
+    #   momentary buttons: +1 = pressed, +1 again = released (odd value = held down)
+    #   FCU knobs S_FCU_*: +1 = pull (selected), -1 = push (managed)
+    def _fnx_set(self, sc, var, value):
+        sc.set_var(f"L:{var}", "number", value)
+
+    def _fnx_press(self, sc, var):
+        v = self._lvar(sc, var) or 0.0
+        if int(v) % 2:  # left "held down" - release first
+            v += 1
+            self._fnx_set(sc, var, v)
+            time.sleep(0.1)
+        self._fnx_set(sc, var, v + 1)
+        time.sleep(0.12)
+        self._fnx_set(sc, var, v + 2)
+        time.sleep(0.15)
+
+    def _fnx_pull(self, sc, var):
+        self._fnx_set(sc, var, (self._lvar(sc, var) or 0.0) + 1)
+        time.sleep(0.3)
+
+    def _fnx_type(self, sc, text):
+        names = {".": "DOT", "/": "SLASH", " ": "SPACE", "-": "MINUS"}
+        for ch in text.upper():
+            self._fnx_press(sc, "S_CDU1_KEY_" + names.get(ch, ch))
+
+    def _fnx_configure(self, sc, flap_idx, gear_down):
+        self._fnx_set(sc, "S_FC_FLAPS", flap_idx)
+        self._fnx_set(sc, "S_OH_EXT_LT_LANDING_BOTH", 2)
+        self._fnx_set(sc, "S_MIP_GEAR", 1 if gear_down else 0)
+        self._fnx_set(sc, "S_MIP_PARKING_BRAKE", 0)
+        time.sleep(2.0)
+        # Verify against the sim's own state and flip if the lever convention is the other way round.
+        gear = sc.get_var("GEAR HANDLE POSITION", "bool")
+        if gear is not None and bool(gear) != gear_down:
+            self._fnx_set(sc, "S_MIP_GEAR", 0 if gear_down else 1)
+        if sc.get_var("BRAKE PARKING POSITION", "bool"):
+            self._fnx_set(sc, "S_MIP_PARKING_BRAKE", 1)
+        self.log(f"Fenix: flaps {flap_idx}, gear {'down' if gear_down else 'up'}, landing lights on.")
+
+    def _fnx_tune_ils(self, sc, freq_hz, course_mag):
+        """Type the ILS into MCDU 1 RAD NAV: LSK3L = ILS/FREQ, LSK4L = CRS."""
+        self._fnx_press(sc, "S_CDU1_KEY_RAD_NAV")
+        time.sleep(0.8)
+        self._fnx_type(sc, f"{freq_hz / 1e6:.2f}")
+        self._fnx_press(sc, "S_CDU1_KEY_LSK3L")
+        time.sleep(0.8)
+        self._fnx_type(sc, f"{course_mag:03d}")
+        self._fnx_press(sc, "S_CDU1_KEY_LSK4L")
+        time.sleep(0.5)
+        self.log(f"Fenix MCDU RAD NAV: ILS {freq_hz / 1e6:.2f} / CRS {course_mag:03d} entered.")
+
+    def _fnx_autopilot(self, sc, has_ils):
+        for efis in ("LS", "FD"):
+            if not self._on(sc, f"I_FCU_EFIS1_{efis}"):
+                self._fnx_press(sc, f"S_FCU_EFIS1_{efis}")
+        # Pull SPD, HDG and V/S: selected speed/heading = current values, V/S 0 (level until G/S capture).
+        for knob in ("S_FCU_SPEED", "S_FCU_HEADING", "S_FCU_VERTICAL_SPEED"):
+            self._fnx_pull(sc, knob)
+        if not self._on(sc, "I_FCU_AP1"):
+            self._fnx_press(sc, "S_FCU_AP1")
+        time.sleep(0.5)
+        if not self._on(sc, "I_FCU_ATHR"):
+            self._fnx_press(sc, "S_FCU_ATHR")
+        self.log(f"Fenix FCU: SPD/HDG/VS selected, AP1 {'ON' if self._on(sc, 'I_FCU_AP1') else 'NOT on!'}, "
+                 f"A/THR {'ON' if self._on(sc, 'I_FCU_ATHR') else 'NOT on!'}, LS on.")
+        if not has_ils:
+            return
+        time.sleep(3.0)  # give the MMR time to receive the localizer
+        for attempt in range(4):
+            if self._on(sc, "I_FCU_APPR"):
+                self.log("APPR armed (LOC + G/S) - check the FMA: LOC and G/S in blue.")
+                return
+            self._fnx_press(sc, "S_FCU_APPR")
+            time.sleep(2.0)
+        if self._on(sc, "I_FCU_APPR"):
+            self.log("APPR armed (LOC + G/S) - check the FMA: LOC and G/S in blue.")
+        else:
+            self.log("WARNING: APPR did not arm. Check MCDU RAD NAV shows the ILS (clear the scratchpad if it "
+                     "says FORMAT ERROR), then press APPR yourself.")
+
     def _lvar(self, sc, name):
-        """Read an A32NX L-var; None if this sim/aircraft does not expose it."""
+        """Read a cockpit L-var; None if this sim does not allow L-var access over SimConnect."""
         return sc.get_var(f"L:{name}", "number", timeout=1.5)
 
     def disarm_previous_approach(self, sc, profile):
         """On a re-spawn the old approach is often still armed/captured (LOC/G/S/LAND).
         Clear it first so the new APPR press arms a fresh capture."""
-        sc.event("A32NX.FCU_AP_DISCONNECT_PUSH" if profile == "FlyByWire A32NX" else "AUTOPILOT_OFF")
-        if profile == "FlyByWire A32NX":
+        if profile == FENIX:
+            if self._on(sc, "I_FCU_APPR"):
+                self._fnx_press(sc, "S_FCU_APPR")
+            elif self._on(sc, "I_FCU_LOC"):
+                self._fnx_press(sc, "S_FCU_LOC")
+            for ap in ("AP1", "AP2"):
+                if self._on(sc, f"I_FCU_{ap}"):
+                    self._fnx_press(sc, f"S_FCU_{ap}")
+            time.sleep(0.3)
+            return
+        sc.event("A32NX.FCU_AP_DISCONNECT_PUSH" if profile == FBW else "AUTOPILOT_OFF")
+        if profile == FBW:
             if self._lvar(sc, "A32NX_FCU_APPR_MODE_ACTIVE"):
                 sc.event("A32NX.FCU_APPR_PUSH")
             elif self._lvar(sc, "A32NX_FCU_LOC_MODE_ACTIVE"):
@@ -209,7 +335,7 @@ class Trainer:
         self.log("Autopilot: AP ON, HDG, ALT HOLD, A/THR.")
         if not freq_hz:
             return
-        self._wait_for_localizer(sc, 1, freq_hz)
+        self._wait_for_localizer(sc, (1, 3), freq_hz)
         for attempt in range(1, 4):
             sc.event("AP_APR_HOLD_ON")
             time.sleep(1.0)
@@ -239,7 +365,7 @@ class Trainer:
         self.log("Autopilot (A32NX FCU): selected SPD/HDG, ALT set, AP1, A/THR.")
         if not freq_hz:
             return
-        self._wait_for_localizer(sc, 3, freq_hz)
+        self._wait_for_localizer(sc, (3,), freq_hz)
         time.sleep(0.5)
         if self._lvar(sc, "A32NX_FCU_APPR_MODE_ACTIVE") is None:
             # L-vars not readable: we cannot verify, so press exactly once (it is a toggle).
@@ -281,6 +407,8 @@ class App(tk.Tk):
             "icao": "EDDF", "runway": "25C", "distance": "10", "speed": "160",
             "config": "Flaps 2, gear down", "intercept": "Straight-in on centerline",
             "profile": "Auto-detect", "freq": ""}.items()}
+        if self.v["profile"].get() not in PROFILES:
+            self.v["profile"].set("Auto-detect")
         self.below = tk.BooleanVar(value=s.get("below_gs", True))
         self.ap = tk.BooleanVar(value=s.get("autopilot", True))
 
@@ -311,7 +439,7 @@ class App(tk.Tk):
         ttk.Combobox(frm, textvariable=self.v["intercept"], values=list(INTERCEPTS), state="readonly", width=32).grid(row=r, column=1, sticky="w")
         r += 1
         ttk.Label(frm, text="Aircraft profile:").grid(row=r, column=0, sticky="w", pady=3)
-        ttk.Combobox(frm, textvariable=self.v["profile"], values=PROFILES, state="readonly", width=32).grid(row=r, column=1, sticky="w")
+        ttk.Combobox(frm, textvariable=self.v["profile"], values=PROFILES, state="readonly", width=36).grid(row=r, column=1, sticky="w")
         r += 1
         ttk.Label(frm, text="ILS frequency override (MHz):").grid(row=r, column=0, sticky="w", pady=3)
         ttk.Entry(frm, textvariable=self.v["freq"], width=10).grid(row=r, column=1, sticky="w")

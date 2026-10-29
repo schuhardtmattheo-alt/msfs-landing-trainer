@@ -27,7 +27,7 @@ Disconnect the autopilot whenever you like and land by hand. Click again to repe
 - Straight-in or 30° intercept from left/right (practise LOC capture)
 - 5 configurations from clean to full landing configuration
 - Optional: no autopilot – hand-fly the whole approach
-- FlyByWire A32NX support (FCU), default A320neo and other default aircraft
+- Airbus A320 family: Fenix A319/A320/A321 (ILS typed into the MCDU automatically), FlyByWire A32NX, LVFR A319/A321, default A320neo
 - Remembers your last settings
 
 **Installation**
@@ -49,6 +49,7 @@ Runway data: OurAirports (public domain). SimConnect.dll © Microsoft (MSFS SDK)
 ---
 
 **Changelog**
+- 1.3.0 - Fenix A319/A320/A321 support: ILS entered in MCDU RAD NAV, FCU set up, APPR verified. LVFR support, better ILS detection.
 - 1.1 – More reliable APPR: waits for localizer signal, re-tunes the ILS if the aircraft overrides it, verifies and retries APPR; clears the previous approach before a re-spawn. Folder build (fewer antivirus false positives).
 - 1.0 – Initial release.
 

@@ -98,19 +98,23 @@ def normalize_ident(s):
 
 
 # ------------------------------------------------------------------ approach
-def pick_ils(rwy, navaids):
-    """Choose the localizer that serves this runway from the sim's nearby-navaid list."""
+def pick_ils(rwy, navaids, relaxed=False):
+    """Choose the localizer that serves this runway from the sim's nearby-navaid list.
+
+    relaxed: wider limits, for airports whose database threshold is a bit off from the sim's.
+    """
+    max_cross, extra_nm = (1.0, 6) if relaxed else (0.35, 3)
     best = None
     for n in navaids:
         if not n["flags"] & 2:  # has localizer
             continue
         d = distance_nm(rwy["thr_lat"], rwy["thr_lon"], n["lat"], n["lon"])
-        if d > rwy["length_ft"] / FT_PER_NM + 3:
+        if d > rwy["length_ft"] / FT_PER_NM + extra_nm:
             continue
         brg = bearing(rwy["thr_lat"], rwy["thr_lon"], n["lat"], n["lon"])
         along = d * math.cos(math.radians(angle_diff(brg, rwy["course_true"])))
         cross = abs(d * math.sin(math.radians(angle_diff(brg, rwy["course_true"]))))
-        if along <= 0 or cross > 0.35:
+        if along <= 0 or cross > max_cross:
             continue
         if best is None or cross < best[0]:
             best = (cross, n)
