@@ -50,8 +50,9 @@ jobs:
         shell: bash
         run: |
           cd src
+          SRC="$(pwd -W)"  # Windows-style path; PyInstaller resolves relative paths against --specpath
           python -m PyInstaller --noconfirm --onedir --windowed --name LandingTrainer \
-            --add-data "$PWD/data/runways.csv;data" --add-binary "$PWD/data/SimConnect.dll;." \
+            --add-data "$SRC/data/runways.csv;data" --add-binary "$SRC/data/SimConnect.dll;." \
             --distpath ../build/dist --workpath ../build/work --specpath ../build landing_trainer.py
 
       - name: Package
