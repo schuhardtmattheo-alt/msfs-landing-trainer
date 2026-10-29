@@ -51,7 +51,7 @@ jobs:
         run: |
           cd src
           python -m PyInstaller --noconfirm --onedir --windowed --name LandingTrainer \
-            --add-data "data/runways.csv;data" --add-binary "data/SimConnect.dll;." \
+            --add-data "$PWD/data/runways.csv;data" --add-binary "$PWD/data/SimConnect.dll;." \
             --distpath ../build/dist --workpath ../build/work --specpath ../build landing_trainer.py
 
       - name: Package
