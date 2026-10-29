@@ -1,0 +1,6 @@
+build/
+stage/
+*.zip
+src/data/
+__pycache__/
+*.pyc

@@ -1,0 +1,72 @@
+# Builds LandingTrainer when a GitHub Release is published and attaches the zip.
+# The app's auto-updater downloads that zip.
+name: Build release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to (re)build, e.g. v1.2.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: python -m pip install pyinstaller==6.11.1
+
+      - name: Fetch data (runway database, SimConnect.dll)
+        shell: bash
+        run: |
+          mkdir -p src/data
+          curl -sSfL -o src/data/runways.csv https://davidmegginson.github.io/ourairports-data/runways.csv
+          python -m pip download SimConnect==0.4.26 --no-deps -d sc
+          python -c "import zipfile,glob; z=zipfile.ZipFile(glob.glob('sc/*.whl')[0]); open('src/data/SimConnect.dll','wb').write(z.read('SimConnect/SimConnect.dll'))"
+
+      - name: Write version.py
+        shell: bash
+        run: |
+          VER="${TAG#v}"
+          printf 'VERSION = "%s"\nGITHUB_REPO = "%s"\n' "$VER" "$GITHUB_REPOSITORY" > src/version.py
+          cat src/version.py
+
+      - name: Build
+        shell: bash
+        run: |
+          cd src
+          python -m PyInstaller --noconfirm --onedir --windowed --name LandingTrainer \
+            --add-data "data/runways.csv;data" --add-binary "data/SimConnect.dll;." \
+            --distpath ../build/dist --workpath ../build/work --specpath ../build landing_trainer.py
+
+      - name: Package
+        shell: bash
+        run: |
+          VER="${TAG#v}"
+          P=stage/MSFS-LandingTrainer
+          mkdir -p $P/source
+          cp -r build/dist/LandingTrainer $P/
+          cp package/README.txt package/LICENSE.txt $P/
+          cp src/*.py $P/source/
+          cd stage && 7z a -tzip "../MSFS-LandingTrainer-$VER.zip" MSFS-LandingTrainer > /dev/null
+
+      - name: Upload to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" MSFS-LandingTrainer-*.zip --clobber
