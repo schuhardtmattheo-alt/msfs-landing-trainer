@@ -3,19 +3,24 @@ MSFS LANDING TRAINER  (Microsoft Flight Simulator 2020)
 
 What it does
 ------------
-You enter a destination airport (ICAO) and a runway. The tool then
-  1. teleports your aircraft onto the ILS final approach (default 10 NM out,
-     slightly below the glideslope, aligned with the runway),
-  2. finds the ILS of that runway in the sim's own navaid data
-     (frequency, glideslope angle) and tunes NAV1 + NAV3 and the course,
-  3. configures the aircraft (flaps, gear, spoilers armed, landing lights,
-     parking brake released),
-  4. sets the autopilot: speed, heading, altitude, AP ON, A/THR, APPR armed.
-     It waits until the localizer signal is received, re-tunes the ILS if the
-     aircraft changed it, and checks that APPR really armed (retries if not).
-     The aircraft captures LOC and G/S on its own. Disconnect the AP whenever
-     you like and land by hand.
-Press the button again to repeat the same approach as often as you want.
+Practise ILS approaches and landings without flying the whole route.
+You pick an airport and runway, and the tool works in two steps:
+
+  1  SPAWN ON FINAL
+     Your aircraft is placed exactly on the localizer and exactly on the
+     glideslope of that runway (default 10 NM out), configured for landing
+     (flaps, gear, landing lights, parking brake released) and FROZEN in the
+     air. The aircraft's systems keep running while it is frozen.
+     The tool shows the ILS frequency and course from the sim's own data.
+     You now tune the ILS yourself and set the thrust levers to CLB.
+
+  2  START APPROACH
+     The freeze is released with the correct approach speed and descent rate,
+     and the autopilot, autothrust and APPR mode are switched on. The tool
+     checks that each one really is ON (and tries again if not).
+     The autopilot now flies the ILS. Take over whenever you like and land.
+
+Press 1 again to fly the approach as often as you want.
 
 Installation
 ------------
@@ -29,45 +34,44 @@ How to use
 1. Start MSFS 2020 and begin a flight at ANY airport (e.g. on a runway),
    engines running. Supported: Fenix A319/A320/A321, FlyByWire A32NX,
    LVFR A319/A321 and the default A320neo (others: "generic" profile).
-2. Start LandingTrainer.exe (MSFS can stay in the foreground / full screen
-   is fine; alt-tab to the tool).
-3. Enter airport (e.g. EDDF), choose runway (e.g. 25C), distance, configuration.
-4. Click "Spawn on approach". The sim pauses briefly, you are teleported,
-   everything is set up, the sim resumes. Done.
+2. Start LandingTrainer.exe, enter airport (e.g. EDDF) and runway (e.g. 25C).
+3. Press "1  Spawn on final". The aircraft is now frozen on the approach.
+4. Tune the ILS shown in the tool:
+     Airbus: MCDU RAD NAV -> ILS/FREQ (LSK 3L), then CRS (LSK 4L)
+     Default aircraft: NAV1
+   The tool shows live whether the localizer and glideslope are received.
+5. Thrust levers to the CLB detent (Airbus). Nothing moves yet.
+6. Press "2  Start approach". AP, A/THR and APPR come on, the aircraft flies
+   down the glideslope.
 
 Options
 -------
-Distance           start point from the runway threshold (3-30 NM)
-Configuration      Clean / Flaps 1 / Flaps 2 + gear / Flaps 3 + gear / Landing
-Speed              target speed (filled automatically per configuration)
-Approach           straight-in, or a 30 deg intercept from left/right
-                   (practise LOC capture)
-Aircraft profile   Auto-detect (recognised by the aircraft title),
-                   Fenix (FCU + MCDU RAD NAV via cockpit controls),
-                   FlyByWire A32NX / LVFR (FCU events), default A320neo/generic
-ILS freq override  only needed if the ILS is not found automatically
-Below glideslope   start ~150 ft below the G/S so it is captured from below
-Engage autopilot   untick to hand-fly the whole approach
+Distance           start point from the runway threshold (3-25 NM)
+Configuration      Flaps 1 / Flaps 2 + gear / Flaps 3 + gear / Landing (FULL)
+Speed              approach speed (filled in automatically per configuration)
+Approach           straight-in on LOC + G/S, or a 30 deg intercept from
+                   left/right (level, the G/S is captured from below)
+Aircraft profile   Auto-detect (by aircraft title), Fenix, FlyByWire/LVFR,
+                   default A320neo / generic
+Autopilot          untick to hand-fly the approach from the start
 
 Notes / limits
 --------------
-* Fenix: the ILS is typed into MCDU 1 RAD NAV automatically. Keep the MCDU
-  scratchpad empty before spawning. Needs a current MSFS 2020 (Sim Update 12+).
-* A32NX: if the FMA shows LVR CLB, move the thrust levers to the CLB detent.
-  Press LS on the EFIS to see the ILS scales. The MCDU flight plan itself is
-  NOT entered (the A32NX MCDU cannot be programmed from outside the sim);
-  the approach is flown via the ILS radio + FCU, which is what matters here.
-  If the A32NX re-tunes the ILS itself, enter the frequency in MCDU RAD NAV.
-* If no ILS exists for the runway, the tool still spawns you on the extended
-  centerline; then fly it visually.
+* Fenix: needs a current MSFS 2020 (Sim Update 12 or newer).
+* If the FMA shows LVR CLB, move the thrust levers to the CLB detent.
+* If no ILS exists for the runway, you are placed on the runway centerline
+  on a 3 degree path; fly it visually.
 * Engines must be running before you spawn (the tool warns you).
 * On start the app checks for a new version and offers to update itself.
 * Settings are remembered in %APPDATA%\LandingTrainer\settings.json
 
 Changelog
 ---------
-1.3  Fenix A319/A320/A321 support (ILS via MCDU, FCU, APPR check), LVFR,
-     better ILS detection.
+1.4  New two-step flow: spawn exactly on localizer + glideslope, frozen
+     while you tune the ILS and set thrust; then the approach starts with
+     correct speed and descent rate, AP + A/THR + APPR engaged and verified.
+     ILS is no longer tuned automatically.
+1.3  Fenix A319/A320/A321 support, LVFR, better ILS detection.
 1.2  Auto-update: the app checks GitHub Releases on start and updates itself.
 1.1  More reliable APPR arming, previous approach cleared before re-spawn,
      folder build.

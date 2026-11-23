@@ -121,20 +121,51 @@ def pick_ils(rwy, navaids, relaxed=False):
     return best[1] if best else None
 
 
-def spawn_point(rwy, dist_nm, intercept, gs_angle=3.0, below_gs_ft=150.0, elev_ft=0.0):
-    """Return (lat, lon, alt_ft, heading_true) for the start of the approach.
+FT_PER_M = 3.28084
 
-    intercept: 0 = straight in on the centerline, -30 = from the left, +30 = from the right.
-    """
+
+def final_course(rwy, ils=None):
+    """True course of the final approach, and a point on it (the localizer antenna if known).
+
+    The sim's localizer antenna defines the centerline more precisely than the runway database;
+    its heading is used when it agrees with the runway (otherwise it may be magnetic)."""
     crs = rwy["course_true"]
-    alt = elev_ft + 50 + dist_nm * FT_PER_NM * math.tan(math.radians(gs_angle)) - below_gs_ft
+    if ils and ils["flags"] & 2:
+        if abs(angle_diff(ils["loc_hdg"], crs)) < 2.0:
+            crs = ils["loc_hdg"] % 360
+        return crs, (ils["lat"], ils["lon"])
+    return crs, (rwy["thr_lat"], rwy["thr_lon"])
+
+
+def spawn_point(rwy, dist_nm, intercept, ils=None, elev_ft=0.0):
+    """Return dict(lat, lon, alt, hdg, crs, on_gs) for the start of the approach.
+
+    The aircraft is placed exactly on the localizer centerline, dist_nm before the threshold,
+    exactly on the glideslope (computed from the sim's glideslope antenna when available).
+    intercept: 0 = straight in, -30 = from the left, +30 = from the right (level, on G/S height).
+    """
+    crs, anchor = final_course(rwy, ils)
+    # distance from the anchor back to the threshold, measured along the course
+    d = distance_nm(anchor[0], anchor[1], rwy["thr_lat"], rwy["thr_lon"])
+    brg = bearing(anchor[0], anchor[1], rwy["thr_lat"], rwy["thr_lon"]) if d > 0.01 else crs + 180
+    back_to_thr = d * math.cos(math.radians(angle_diff(brg, crs + 180)))
+
+    def on_centerline(dist):
+        return destination(anchor[0], anchor[1], crs + 180, back_to_thr + dist)
+
+    plat, plon = on_centerline(dist_nm)
+    has_gs = bool(ils and ils["flags"] & 4)
+    gs_angle = ils["gs_angle"] if has_gs and 2.0 <= ils["gs_angle"] <= 4.5 else 3.0
+    if has_gs:
+        d_gs = distance_nm(ils["gs_lat"], ils["gs_lon"], plat, plon)
+        alt = ils["gs_alt_m"] * FT_PER_M + d_gs * FT_PER_NM * math.tan(math.radians(gs_angle))
+    else:
+        alt = elev_ft + 50 + dist_nm * FT_PER_NM * math.tan(math.radians(gs_angle))
+
     if not intercept:
-        lat, lon = destination(rwy["thr_lat"], rwy["thr_lon"], crs + 180, dist_nm)
-        return lat, lon, alt, crs
+        return dict(lat=plat, lon=plon, alt=alt, hdg=crs, crs=crs, on_gs=True, gs_angle=gs_angle)
     offset = 2.0  # NM beside the centerline
-    back = dist_nm + offset / math.tan(math.radians(abs(intercept)))
-    lat, lon = destination(rwy["thr_lat"], rwy["thr_lon"], crs + 180, back)
-    side = crs - 90 if intercept < 0 else crs + 90
-    lat, lon = destination(lat, lon, side, offset)
-    hdg = crs + 30 if intercept < 0 else crs - 30
-    return lat, lon, alt, hdg % 360
+    lat, lon = on_centerline(dist_nm + offset / math.tan(math.radians(abs(intercept))))
+    lat, lon = destination(lat, lon, crs - 90 if intercept < 0 else crs + 90, offset)
+    hdg = (crs + 30 if intercept < 0 else crs - 30) % 360
+    return dict(lat=lat, lon=lon, alt=alt, hdg=hdg, crs=crs, on_gs=False, gs_angle=gs_angle)

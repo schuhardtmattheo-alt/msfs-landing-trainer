@@ -49,6 +49,7 @@ Runway data: OurAirports (public domain). SimConnect.dll © Microsoft (MSFS SDK)
 ---
 
 **Changelog**
+- 1.4.0 - New two-step flow: spawn exactly on localizer + glideslope, frozen while you tune the ILS and set thrust; then the approach starts with correct speed and descent, AP + A/THR + APPR engaged and verified.
 - 1.3.0 - Fenix A319/A320/A321 support: ILS entered in MCDU RAD NAV, FCU set up, APPR verified. LVFR support, better ILS detection.
 - 1.1 – More reliable APPR: waits for localizer signal, re-tunes the ILS if the aircraft overrides it, verifies and retries APPR; clears the previous approach before a re-spawn. Folder build (fewer antivirus false positives).
 - 1.0 – Initial release.
